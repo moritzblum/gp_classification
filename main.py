@@ -18,7 +18,7 @@ import pandas as pd
 from torch_geometric.loader import DataLoader, DataListLoader
 from torch.nn import Linear
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, RGCNConv, GINEConv, MLP
+from torch_geometric.nn import GCNConv, RGCNConv, GINEConv, MLP, GINConv
 from torch_geometric.nn import global_mean_pool, global_add_pool, global_max_pool
 from tqdm import tqdm
 import logging
@@ -71,7 +71,6 @@ class GPClassification(InMemoryDataset):
 
         node_dict = {node: i for i, node in enumerate(all_node_terms)}
 
-        # todo remove pattern from relation name
         rel_dict = {edge: i for i, edge in enumerate(all_rel_terms)}
 
         x = torch.arange(0, self.num_nodes + 1)
@@ -182,6 +181,11 @@ class GCN(torch.nn.Module):
             self.conv2 = RGCNConv(hidden_channels, hidden_channels, num_relations=self.num_relations)
             self.conv3 = RGCNConv(hidden_channels, hidden_channels, num_relations=self.num_relations)
 
+        elif layer_type == 'GIN':
+            self.conv1 = GINConv(MLP([hidden_channels, hidden_channels]))
+            self.conv2 = GINConv(MLP([hidden_channels, hidden_channels]))
+            self.conv3 = GINConv(MLP([hidden_channels, hidden_channels]))
+
         elif layer_type == 'GINE':
             self.conv1 = GINEConv(MLP([hidden_channels, hidden_channels]), edge_dim=self.num_relations)
             self.conv2 = GINEConv(MLP([hidden_channels, hidden_channels]), edge_dim=self.num_relations)
@@ -209,7 +213,7 @@ class GCN(torch.nn.Module):
         x = x[relevant_nodes]
         batch = batch[relevant_nodes]
 
-        x = global_add_pool(x, batch)  # [batch_size, hidden_channels]
+        x = global_mean_pool(x, batch)  # [batch_size, hidden_channels]
 
         # 3. Apply a final classifier
         x = F.dropout(x, p=0.5, training=self.training)
@@ -331,14 +335,15 @@ def test_model(model, loader):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         prog='GP Classification',
-        description='Model to classify graphs based on graph patterns.')
+        description='Model to classify graphs based on graph patterns.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     # Hyperparameters
-    parser.add_argument('--epochs', default=200, type=int)  # option that takes a value
-    parser.add_argument('--model', default='GCN', choices=['GCN', 'RGCN', 'GINE'])
-    parser.add_argument('--hidden', default=32, type=int)
+    parser.add_argument('--epochs', default=200, type=int, help="Number of training epochs.")  # option that takes a value
+    parser.add_argument('--model', default='GCN', choices=['GCN', 'RGCN', 'GINE', 'GIN'], help='Model type.')
+    parser.add_argument('--hidden', default=32, type=int, help='Number of hidden/embedding channels.')
     parser.add_argument('--bs', default=64, type=int, help='Batch size.')
-    parser.add_argument('--lr', default=0.001, type=float)
+    parser.add_argument('--lr', default=0.001, type=float, help='Learning rate.')
     parser.add_argument('--freeze_emb',
                         action='store_true',
                         help='Freeze the embeddings of the nodes in the model.')
@@ -347,8 +352,8 @@ if __name__ == '__main__':
                         type=int)
 
     # Reporting
-    parser.add_argument('--run_name', default='run=01')
-    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--run_name', default='run=01', help='Name of the run to store the results.')
+    parser.add_argument('--debug', action='store_true', help='Set to debug mode (more verbose).')
 
     # Example CMD call to evaluate a specific setting:
     # python main.py --pattern p-v1-t1-v1 --graph_size 2 --gp_enriched
