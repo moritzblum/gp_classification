@@ -170,6 +170,8 @@ class GCN(torch.nn.Module):
         self.num_relations = num_relations
         self.emb = torch.nn.Embedding(num_nodes, hidden_channels, _freeze=freeze_embeddings)
         self.lin = Linear(hidden_channels, NUM_CLASSES)
+        self.hidden_channels = hidden_channels
+        self.freeze_embeddings = freeze_embeddings
 
         if layer_type == 'GCN':
             self.conv1 = GCNConv(hidden_channels, hidden_channels)
@@ -187,17 +189,21 @@ class GCN(torch.nn.Module):
             self.conv3 = GINConv(MLP([hidden_channels, hidden_channels]))
 
         elif layer_type == 'GINE':
-            self.conv1 = GINEConv(MLP([hidden_channels, hidden_channels]), edge_dim=self.num_relations)
-            self.conv2 = GINEConv(MLP([hidden_channels, hidden_channels]), edge_dim=self.num_relations)
-            self.conv3 = GINEConv(MLP([hidden_channels, hidden_channels]), edge_dim=self.num_relations)
+            self.conv1 = GINEConv(MLP([hidden_channels, hidden_channels]), edge_dim=hidden_channels)
+            self.conv2 = GINEConv(MLP([hidden_channels, hidden_channels]), edge_dim=hidden_channels)
+            self.conv3 = GINEConv(MLP([hidden_channels, hidden_channels]), edge_dim=hidden_channels)
+            self.emb_rel = torch.nn.Embedding(num_relations, hidden_channels)
 
     def forward(self, x, edge_index, edge_type, batch):
         edge_features = None
         if self.layer_type == 'RGCN':
             edge_features = edge_type
         elif self.layer_type == 'GINE':
-            edge_features = torch.nn.functional.one_hot(edge_type, num_classes=self.num_relations).to(
-                torch.float)
+            if self.freeze_embeddings:
+                edge_features = torch.nn.functional.one_hot(edge_type, num_classes=self.hidden_channels).to(
+                    torch.float)
+            else:
+                edge_features = self.emb_rel.weight[edge_type.long()]
 
         # 1. Obtain node embeddings
         x = self.conv1(self.emb.weight[x.long()], edge_index, edge_features)
