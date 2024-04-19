@@ -1,9 +1,9 @@
 
 # Can GNNs approximate graph pattern matching based graph classification?
 
-<p align="center">
-<img src="https://anonymous.4open.science/api/repo/gp_classification-81B8/file/figures/enriched-DLM-example.png" width="400">
-</p>
+
+
+![alt text](https://anonymous.4open.science/api/repo/gp_classification-81B8/file/figures/enriched-DLM-example.png)
 
 
 ### Set-up a Conda Environment and Install Dependencies
