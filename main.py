@@ -9,6 +9,7 @@ import torch
 import random
 from typing import Callable, List, Optional
 
+import wandb
 from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
 from torch.utils.data import Dataset
 from torch_geometric.data import Data, InMemoryDataset, download_url
@@ -200,7 +201,8 @@ class GCN(torch.nn.Module):
             edge_features = edge_type
         elif self.layer_type == 'GINE':
             if self.freeze_embeddings:
-                edge_features = torch.nn.functional.one_hot(edge_type, num_classes=self.hidden_channels).to(
+                edge_features = torch.nn.functional.one_hot(edge_type,
+                                                            num_classes=self.hidden_channels).to(
                     torch.float)
             else:
                 edge_features = self.emb_rel.weight[edge_type.long()]
@@ -214,7 +216,7 @@ class GCN(torch.nn.Module):
 
         # 2. Readout layer
         # filter x and batch (by deleting certain indices) to only contain nodes
-        # that occude in edge_index
+        # that occur in edge_index
         relevant_nodes = torch.unique(edge_index.flatten())
         x = x[relevant_nodes]
         batch = batch[relevant_nodes]
@@ -228,8 +230,27 @@ class GCN(torch.nn.Module):
         return x
 
 
-
 def evaluate(pattern_name='p-v1-t1-v1', graph_size=2, gp_enriched=False):
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="Graph Pattern Classification",
+
+        # track hyperparameters and run metadata
+        config={
+            "pattern_name": pattern_name,
+            "graph_size": graph_size,
+            "gp_enriched": gp_enriched,
+            "epochs": EPOCHS,
+            "lr": LR,
+            "model_type": MODEL_TYPE,
+            "hidden_channels": HIDDEN_CHANNELS,
+            "batch_size": BS,
+            "freeze_embeddings": FREEZE_EMBEDDINGS,
+            "run_name": RUN_NAME,
+            "min_g": MIN_G
+        }
+    )
+
     logging.debug(f'Evaluating GP: {pattern_name}, graph size: {graph_size}, enriched: {gp_enriched}')
 
     graph_file = f'./data/raw/enriched-graphs_of_size_{graph_size}.json' if gp_enriched else f'./data/raw/plain-graphs_of_size_{graph_size}.json'
@@ -276,9 +297,14 @@ def evaluate(pattern_name='p-v1-t1-v1', graph_size=2, gp_enriched=False):
     results = {}
 
     for epoch in range(EPOCHS):
-        train_model(model, criterion, optimizer, train_loader)
+        loss = train_model(model, criterion, optimizer, train_loader)
 
         valid_results = test_model(model, val_loader)
+        wandb.log({"loss": loss,
+                   "acc": valid_results['Acc'],
+                   "f1": valid_results['F1'],
+                   "precision": valid_results['P'],
+                   "recall": valid_results['R']})
 
         logging.debug(f'Epoch: {epoch}, Val Acc: {valid_results["Acc"]}')
 
@@ -299,6 +325,7 @@ def evaluate(pattern_name='p-v1-t1-v1', graph_size=2, gp_enriched=False):
             break
 
     logging.debug(f'Results: {str(results)}')
+    wandb.finish()
 
     return results
 
@@ -316,6 +343,7 @@ def train_model(model, criterion, optimizer, train_loader):
         optimizer.step()  # Update parameters based on gradients.
         optimizer.zero_grad()  # Clear gradients.
     logging.debug(f'Loss: {reduce(lambda x, y: x + y, loss_epoch) / len(loss_epoch)}')
+    return reduce(lambda x, y: x + y, loss_epoch) / len(loss_epoch)
 
 
 def test_model(model, loader):
@@ -345,8 +373,10 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     # Hyperparameters
-    parser.add_argument('--epochs', default=200, type=int, help="Number of training epochs.")  # option that takes a value
-    parser.add_argument('--model', default='GCN', choices=['GCN', 'RGCN', 'GINE', 'GIN'], help='Model type.')
+    parser.add_argument('--epochs', default=200, type=int,
+                        help="Number of training epochs.")  # option that takes a value
+    parser.add_argument('--model', default='GCN', choices=['GCN', 'RGCN', 'GINE', 'GIN'],
+                        help='Model type.')
     parser.add_argument('--hidden', default=32, type=int, help='Number of hidden/embedding channels.')
     parser.add_argument('--bs', default=64, type=int, help='Batch size.')
     parser.add_argument('--lr', default=0.001, type=float, help='Learning rate.')
@@ -388,7 +418,8 @@ if __name__ == '__main__':
         datefmt='%Y-%m-%d %H:%M:%S')
 
     logging.info(f'Running experiments on: {DEVICE}')
-    logging.info(f'Hyperparameters Epochs: {EPOCHS}, Model: {MODEL_TYPE}, Hidden: {HIDDEN_CHANNELS}, LR: {LR}, Freeze: {FREEZE_EMBEDDINGS}')
+    logging.info(
+        f'Hyperparameters Epochs: {EPOCHS}, Model: {MODEL_TYPE}, Hidden: {HIDDEN_CHANNELS}, LR: {LR}, Freeze: {FREEZE_EMBEDDINGS}')
 
     if args.pattern:
         logging.info('Running specific experiment according to the CMD arguments.')
@@ -401,7 +432,7 @@ if __name__ == '__main__':
 
         results_file = f'./results/{RUN_NAME}_model={MODEL_TYPE}_freeze={FREEZE_EMBEDDINGS}_dim={HIDDEN_CHANNELS}_lr={LR}_ming={MIN_G}.json'
         if not os.path.exists(results_file):
-            shutil.copyfile('data/raw/evaluation_results.json', results_file)
+            shutil.copyfile('data/evaluation_results.json', results_file)
 
         logging.info(f'Results will be saved to: {results_file}')
 
@@ -417,6 +448,10 @@ if __name__ == '__main__':
 
         pbar = tqdm(total=num_experiments)
         for pattern_size in results_dict.keys():
+            if pattern_size == 'pattern_of_size_2':
+                continue
+
+            print('after')
             for pattern_name in results_dict[pattern_size].keys():
                 for graph_size in results_dict[pattern_size][pattern_name].keys():
                     if results_dict[pattern_size][pattern_name][graph_size]['cnt_pos'] <= MIN_G or \

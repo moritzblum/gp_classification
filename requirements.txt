@@ -3,3 +3,4 @@ torch
 torch-geometric
 tqdm
 pandas
+wandb
