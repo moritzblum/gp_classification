@@ -5,6 +5,7 @@
 <img src="./figures/enriched-DLM-example.png" width="400">
 </p>
 
+
 ### Set-up a Conda Environment and Install Dependencies
 ```bash
 conda create --name gp python=3.10
