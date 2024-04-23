@@ -16,7 +16,7 @@ If CUDA GPUs are availible, the corresponding Torch versions are automatically i
 
 ### Set-up Project Structure
 ```bash
-git clone git@github.com:moritzblum/gp_classification.git
+git clone https://anonymous.4open.science/r/gp_classification-81B8/
 cd gp_classification
 ```
 
